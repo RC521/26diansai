@@ -1,0 +1,34 @@
+# Build outputs
+/MDK-ARM/*/
+/MDK-ARM/Objects/
+/MDK-ARM/Listings/
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.bin
+*.elf
+*.map
+*.lst
+*.lnp
+*.htm
+*.dep
+*.iex
+
+# Keil/user-local files
+*.uvguix.*
+*.uvgui.*
+*.uvoptx.bak
+*.uvprojx.bak
+JLinkLog.txt
+JLinkSettings.ini
+
+# Editor/OS noise
+.vscode/
+.idea/
+*.user
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
