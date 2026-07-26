@@ -33,11 +33,16 @@
 /* USER CODE BEGIN PTD */
 APP_PLL_t System_PLL;
 SPWM_t my_spwm;
+DualLoop_t My_DualLoop;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-volatile uint16_t adc_buffer[1];
+// 以前：volatile uint16_t adc_buffer[1];
+// 现在：必须能装下 3 个通道的数据！
+volatile uint16_t adc_buffer[3];
+float VOLTAGE_SENSOR_SCALE = 1;// 硬件互感器的倍数,还原成220/311V
+float CURRENT_SENSOR_SCALE = 1;// 硬件互感器的倍数,还原成真实的电流
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -96,12 +101,14 @@ int main(void)
   MX_TIM6_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 	//10kHz
 	APP_PLL_Init(&System_PLL, 0.0001f);
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buffer, 1);
 	HAL_TIM_Base_Start_IT(&htim2);
 	SPWM_Init(&my_spwm,100);
+	DualLoop_Init(&My_DualLoop);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -165,18 +172,53 @@ void SystemClock_Config(void)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
     if (hadc->Instance == ADC1) {
         
-        // 1. 获取输入：拿最新电压
-        float v_grid_real = ((float)adc_buffer[0] - 2048.0f) * (3.3f / 4096.0f);
+        // ==========================================================
+        // 1. 数据采集与物理量还原 (ADC Buffer -> 真实的 V / A)
+        // ==========================================================
+        // 假设通道顺序配置为：CH0(电网电压), CH1(输出电压), CH2(输出电流)
         
-        // 2. 算法处理：跑 PLL，获取当前相位 theta
+        // 提取电网电压 (给 PLL 用来追相位)
+        float v_grid_pin = ((float)adc_buffer[0] - 2048.0f) * (3.3f / 4096.0f);
+        float v_grid_real = v_grid_pin * VOLTAGE_SENSOR_SCALE; // 乘以硬件互感器的倍数，还原成真实的 220V/311V
+
+        // 提取逆变器实际输出电压 (给电压外环用)
+        float v_out_pin = ((float)adc_buffer[1] - 2048.0f) * (3.3f / 4096.0f);
+        float v_out_real = v_out_pin * VOLTAGE_SENSOR_SCALE; 
+
+        // 提取逆变器实际输出电流 (给电流内环用)
+        float i_out_pin = ((float)adc_buffer[2] - 2048.0f) * (3.3f / 4096.0f);
+        float i_out_real = i_out_pin * CURRENT_SENSOR_SCALE; 
+
+
+        // ==========================================================
+        // 2. 算法处理：节拍器 (PLL)
+        // ==========================================================
+        // 算出此刻电网的绝对相位 (System_PLL.theta)
         APP_PLL_Update(&System_PLL, v_grid_real);
-        
-        // 3. 算法处理：跑 SPWM
-        // (注：这里的 0.8f 是写死的调制比，代表 80% 输出能力。实战中这个值由双环 PI 提供)
-        SPWM_Update(&my_spwm, System_PLL.theta, 0.8f);
-        
-        // 4. 硬件输出：一句话搞定，推给寄存器
-        TIM1->CCR1 = my_spwm.CCR_Value; 
+
+
+        // ==========================================================
+        // 3. 算法处理：能量泵 (电压电流双环)
+        // ==========================================================
+        // 假设我们要让系统死死稳住输出 220.0V (这里的220.0f是目标值)
+        // 丢入真实的输出电压和电流，双环 PI 拼命计算，吐出最新的调制比！
+        float dynamic_amplitude = DualLoop_Update(&My_DualLoop, 220.0f, v_out_real, i_out_real);
+
+
+        // ==========================================================
+        // 4. 算法融合：数学造波 (SPWM)
+        // ==========================================================
+        // 🚨 修正了你刚才代码里的 0.8f 漏洞！
+        // 把 PLL 算出的节拍 (theta) 和双环算出的能量 (dynamic_amplitude) 乘在一起！
+        SPWM_Update(&my_spwm, System_PLL.theta, dynamic_amplitude);
+
+
+        // ==========================================================
+        // 5. 硬件执行：推给寄存器，指挥 MOSFET 斩波
+        // ==========================================================
+        // TIM1_CH1 和 TIM1_CH2 互补输出控制全桥
+        TIM1->CCR1 = my_spwm.CCR1_Value; 
+        TIM1->CCR2 = my_spwm.CCR2_Value; 
     }
 }
 /* USER CODE END 4 */
