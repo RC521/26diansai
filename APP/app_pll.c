@@ -1,62 +1,75 @@
 #include "Algorithm.h"
 #include "app_pll.h"
+#include "main.h"
+
 
 /**
- * @brief  ³õÊ¼»¯Õû¸ö PLL ÏµÍ³
- * @param  pll:         ÏµÍ³½á¹¹ÌåÖ¸Õë
- * @param  sample_time: ÖÐ¶ÏÖÜÆÚ (Èç 10kHz ¾ÍÊÇ 0.0001)
+ * @brief  åˆå§‹åŒ–æ•´ä¸ª PLL ç³»ç»Ÿ
+ * @param  pll:         ç³»ç»Ÿç»“æž„ä½“æŒ‡é’ˆ
+ * @param  sample_time: ä¸­æ–­å‘¨æœŸ (å¦‚ 10kHz å°±æ˜¯ 0.0001)
  */
 void APP_PLL_Init(APP_PLL_t *pll, float sample_time) {
     pll->dt = sample_time;
     pll->theta = 0.0f;
     
-    // 1. ³õÊ¼»¯ SOGI (×èÄáÏµÊý 1.414, ´«ÈëÖÜÆÚ)
+    // 1. åˆå§‹åŒ– SOGI (é˜»å°¼ç³»æ•° 1.414, ä¼ å…¥å‘¨æœŸ)
     SOGI_Init(&(pll->sogi), 1.414f, pll->dt);
     
-    // 2. ³õÊ¼»¯ Park ±ä»»
+    // 2. åˆå§‹åŒ– Park å˜æ¢
     Park_Init(&(pll->park));
     
-    // 3. ³õÊ¼»¯ PI ¿ØÖÆÆ÷ 
-    // ²ÎÊý (Kp=0.5, Ki=10.0) ÐèÒªÄãÔÚÊµ³µÉÏ¸ù¾Ý 50Hz µÄ×·×ÙÐ§¹ûÎ¢µ÷
-    // ÏÞ·ùÉèÎª 50.0£¬ÒâË¼ÊÇÔÊÐíµçÍøÆµÂÊ×î¶àÆ«ÒÆÕâÃ´¶àµÄ½ÇËÙ¶È
-    PI_Init(&(pll->pi), 0.5f, 10.0f, 50.0f, -50.0f); 
+    // 3. åˆå§‹åŒ– PI æŽ§åˆ¶å™¨ 
+    // å‚æ•° (Kp=0.5, Ki=10.0) éœ€è¦ä½ åœ¨å®žè½¦ä¸Šæ ¹æ® 50Hz çš„è¿½è¸ªæ•ˆæžœå¾®è°ƒ
+    // é™å¹…è®¾ä¸º 50.0ï¼Œæ„æ€æ˜¯å…è®¸ç”µç½‘é¢‘çŽ‡æœ€å¤šåç§»è¿™ä¹ˆå¤šçš„è§’é€Ÿåº¦
+    PI_Init(&(pll->pi), 0.5f, 10.0f, pll->dt, 50.0f, -50.0f); 
 }
 
 /**
- * @brief  PLL ºËÐÄÁ÷×ªº¯Êý (±ØÐëÔÚ¶¨Ê±Æ÷ÖÐ¶ÏÀïÑÏ¸ñ°´ÖÜÆÚµ÷ÓÃ)
- * @param  pll:         ÏµÍ³½á¹¹ÌåÖ¸Õë
- * @param  v_grid_real: µ±Ç° ADC ²Éµ½µÄÕæÊµ½»Á÷µçÑ¹ (È¥µôÁË 2048 Ö±Á÷Æ«ÖÃµÄÖµ)
+ * @brief  PLL æ ¸å¿ƒæµè½¬å‡½æ•° (å¿…é¡»åœ¨å®šæ—¶å™¨ä¸­æ–­é‡Œä¸¥æ ¼æŒ‰å‘¨æœŸè°ƒç”¨)
+ * @param  pll:         ç³»ç»Ÿç»“æž„ä½“æŒ‡é’ˆ
+ * @param  v_grid_real: å½“å‰ ADC é‡‡åˆ°çš„çœŸå®žäº¤æµç”µåŽ‹ (åŽ»æŽ‰äº† 2048 ç›´æµåç½®çš„å€¼)
  */
 void APP_PLL_Update(APP_PLL_t *pll, float v_grid_real) {
-    // 1. »ù×¼½ÇËÙ¶È
+    // 1. åŸºå‡†è§’é€Ÿåº¦
     float base_omega = 2.0f * PI_VALUE * GRID_BASE_FREQ;  //2pif
     
-    // 2. SOGI Ôì²¨£º´«ÈëÕæÊµµçÑ¹ºÍÉÏÒ»ÂÖµÄ½ÇËÙ¶È
-    // Èç¹ûÊÇµÚÒ»´ÎÔËÐÐ£¬current_omega »¹Ã»Ëã³öÀ´£¬¿ÉÒÔÄ¬ÈÏÓÃ base_omega
-    float temp_omega = (pll->current_omega == 0.0f) ? base_omega : pll->current_omega;  //Õâ¶Î»°µÄÂß¼­ÊÇÒ»¸öÅÐ¶ÏÓï¾ä£¬Èç¹ûcurrent_omega=0£¬ÄÇÃ´temp_omega=base_omega
+    // 2. SOGI é€ æ³¢ï¼šä¼ å…¥çœŸå®žç”µåŽ‹å’Œä¸Šä¸€è½®çš„è§’é€Ÿåº¦
+    // å¦‚æžœæ˜¯ç¬¬ä¸€æ¬¡è¿è¡Œï¼Œcurrent_omega è¿˜æ²¡ç®—å‡ºæ¥ï¼Œå¯ä»¥é»˜è®¤ç”¨ base_omega
+    float temp_omega = (pll->current_omega == 0.0f) ? base_omega : pll->current_omega;  //è¿™æ®µè¯çš„é€»è¾‘æ˜¯ä¸€ä¸ªåˆ¤æ–­è¯­å¥ï¼Œå¦‚æžœcurrent_omega=0ï¼Œé‚£ä¹ˆtemp_omega=base_omega
     SOGI_Update(&(pll->sogi), v_grid_real, temp_omega);
     
-    // 3. Park ±ä»»£ºÓÃ SOGI Ëã³öµÄ Alpha/Beta ºÍÉÏÒ»ÂÖµÄ Theta ËãÎó²î
+    // 3. Park å˜æ¢ï¼šç”¨ SOGI ç®—å‡ºçš„ Alpha/Beta å’Œä¸Šä¸€è½®çš„ Theta ç®—è¯¯å·®
     Park_Update(&(pll->park), pll->sogi.alpha, pll->sogi.beta, pll->theta);
     
-    // 4. PI ¿ØÖÆÆ÷Ïû³ýÎó²î£ºÄ¿±êÊÇÈÃ Park ³öÀ´µÄ Q ÖáµçÑ¹Îª 0
-    // Q Öá¾ÍÊÇÎó²î£¬ÊäÈë¸ø PI µÄ error ¾ÍÊÇ 0 - Q
+    // 4. PI æŽ§åˆ¶å™¨æ¶ˆé™¤è¯¯å·®ï¼šç›®æ ‡æ˜¯è®© Park å‡ºæ¥çš„ Q è½´ç”µåŽ‹ä¸º 0
+    // Q è½´å°±æ˜¯è¯¯å·®ï¼Œè¾“å…¥ç»™ PI çš„ error å°±æ˜¯ 0 - Q
     pll->delta_omega = PI_Update(&(pll->pi), 0.0f, pll->park.Q);
     
-    // 5. VCO Ñ¹¿ØÕñµ´ (¸üÐÂËÙ¶È²¢»ý·Ö³É½Ç¶È)
+    // 5. VCO åŽ‹æŽ§æŒ¯è¡ (æ›´æ–°é€Ÿåº¦å¹¶ç§¯åˆ†æˆè§’åº¦)
     pll->current_omega = base_omega + pll->delta_omega;
     pll->theta += pll->current_omega * pll->dt;
     
-    // 6. ½Ç¶ÈÏÞ·ù (±£Ö¤ÔÚ 0 µ½ 2¦Ð Ö®¼äÒ»Ö±×ªÈ¦)
+    // 6. è§’åº¦é™å¹… (ä¿è¯åœ¨ 0 åˆ° 2Ï€ ä¹‹é—´ä¸€ç›´è½¬åœˆ)
     if (pll->theta > (2.0f * PI_VALUE)) {
         pll->theta -= (2.0f * PI_VALUE);
     } else if (pll->theta < 0.0f) {
         pll->theta += (2.0f * PI_VALUE);
     }
     
-    // Ë³ÊÖËãÒ»ÏÂÕæÊµµÄÎïÀíÆµÂÊ£¬·½±ã Debug
+    // é¡ºæ‰‹ç®—ä¸€ä¸‹çœŸå®žçš„ç‰©ç†é¢‘çŽ‡ï¼Œæ–¹ä¾¿ Debug
     pll->real_freq_hz = pll->current_omega / (2.0f * PI_VALUE);
 }
 
 
+//çž¬æ—¶ç”µåŽ‹é—­çŽ¯
+void Control_Update_A(void)
+{
 
+}
+
+
+//æœ‰æ•ˆå€¼/å¹…å€¼é—­çŽ¯
+void Control_Update_B(void)
+{
+
+}

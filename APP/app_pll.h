@@ -3,30 +3,30 @@
 
 #include "Algorithm.h"
 
-// ¶¨Òå³£Á¿
+// å®šä¹‰å¸¸é‡
 #define PI_VALUE 3.14159265f
-#define GRID_BASE_FREQ 50.0f    // µçÍø»ù×¼ÆµÂÊ 50Hz
+#define GRID_BASE_FREQ 50.0f    // ç”µç½‘åŸºå‡†é¢‘ç‡ 50Hz
 
-/* µ¥ÏàËøÏà»· (Single-Phase PLL) ÏµÍ³½á¹¹Ìå */
+/* å•ç›¸é”ç›¸ç¯ (Single-Phase PLL) ç³»ç»Ÿç»“æ„ä½“ */
 typedef struct {
-    // 1. ¹ÒÔØËã·¨Ä£¿é¶ÔÏó
+    // 1. æŒ‚è½½ç®—æ³•æ¨¡å—å¯¹è±¡
     SOGI_t          sogi;
     Park_t          park;
     PI_Controller_t pi;
     
-    // 2. ÏµÍ³ÔËĞĞ²ÎÊı
-    float dt;               // ÏµÍ³µÄ²ÉÑùÖÜÆÚ (ÀıÈç 10kHz ÏÂÎª 0.0001)
+    // 2. ç³»ç»Ÿè¿è¡Œå‚æ•°
+    float dt;               // ç³»ç»Ÿçš„é‡‡æ ·å‘¨æœŸ (ä¾‹å¦‚ 10kHz ä¸‹ä¸º 0.0001)
     
-    // 3. ÔËĞĞ¹ı³ÌÖĞµÄ¹Ø¼ü×´Ì¬ (±£ÁôÏÂÀ´·½±ãÓÃ´®¿Ú´òÓ¡ Debug)
-    float delta_omega;      // PI Ëã³öÀ´µÄ½ÇËÙ¶ÈÎ¢µ÷Á¿
-    float current_omega;    // µ±Ç°Êµ¼ÊµÄÔËĞĞ½ÇËÙ¶È
+    // 3. è¿è¡Œè¿‡ç¨‹ä¸­çš„å…³é”®çŠ¶æ€ (ä¿ç•™ä¸‹æ¥æ–¹ä¾¿ç”¨ä¸²å£æ‰“å° Debug)
+    float delta_omega;      // PI ç®—å‡ºæ¥çš„è§’é€Ÿåº¦å¾®è°ƒé‡
+    float current_omega;    // å½“å‰å®é™…çš„è¿è¡Œè§’é€Ÿåº¦
     
-    // 4. ×îÖÕÊä³ö½á¹û
-    float theta;            // µ±Ç°µçÍøÏàÎ» (0 ~ 2¦Ğ)
-    float real_freq_hz;     // ÊµÊ±ÍÆËã³öµÄµçÍøÕæÊµÆµÂÊ (Ô¼ 50.0Hz)
+    // 4. æœ€ç»ˆè¾“å‡ºç»“æœ
+    float theta;            // å½“å‰ç”µç½‘ç›¸ä½ (0 ~ 2Ï€)
+    float real_freq_hz;     // å®æ—¶æ¨ç®—å‡ºçš„ç”µç½‘çœŸå®é¢‘ç‡ (çº¦ 50.0Hz)
 } APP_PLL_t;
 
-/* Íâ²¿½Ó¿Úº¯ÊıÉùÃ÷ */
+/* å¤–éƒ¨æ¥å£å‡½æ•°å£°æ˜ */
 void APP_PLL_Init(APP_PLL_t *pll, float sample_time);
 void APP_PLL_Update(APP_PLL_t *pll, float v_grid_real);
 

@@ -1,9 +1,9 @@
 #include "spwm.h"
 #include "arm_math.h"
 /**
- * @brief  ³õÊ¼»¯ SPWM Ä£¿é
- * @param  spwm:       ½á¹¹ÌåÖ¸Õë
- * @param  arr_period: Ó²¼þ¶¨Ê±Æ÷µÄ ARR Öµ (Èç 8400)
+ * @brief  åˆå§‹åŒ– SPWM æ¨¡å—
+ * @param  spwm:       ç»“æž„ä½“æŒ‡é’ˆ
+ * @param  arr_period: ç¡¬ä»¶å®šæ—¶å™¨çš„ ARR å€¼ (å¦‚ 8400)
  */
 void SPWM_Init(SPWM_t *spwm, float arr_period) {
     spwm->Period = arr_period;
@@ -12,31 +12,159 @@ void SPWM_Init(SPWM_t *spwm, float arr_period) {
 }
 
 /**
- * @brief  Éú³Éµ¥ÏàÈ«ÇÅ SPWM Õ¼¿Õ±È (Ë«¼«ÐÔµ÷ÖÆ)
- * @param  spwm:      ½á¹¹ÌåÖ¸Õë
- * @param  theta:     µ±Ç°µçÍøµÄÏàÎ»½Ç (ÓÉ PLL Ìá¹©£¬·¶Î§ 0 ~ 2¦Ð)
- * @param  amplitude: µ÷ÖÆ·ù¶È (ÓÉÍâ²¿ PI ¿ØÖÆÆ÷Ìá¹©£¬·¶Î§ 0.0 ~ 1.0)
+ * @brief  ç”Ÿæˆå•ç›¸å…¨æ¡¥ SPWM å ç©ºæ¯” (åŒæžæ€§è°ƒåˆ¶)
+ * RMS / å¹…å€¼é—­çŽ¯
+ * æŽ§åˆ¶å™¨è¾“å‡ºçš„æ˜¯â€œæ­£å¼¦å¹…åº¦â€
+ * @param  spwm:      ç»“æž„ä½“æŒ‡é’ˆ
+ * @param  theta:     å½“å‰ç”µç½‘çš„ç›¸ä½è§’ (ç”± PLL æä¾›ï¼ŒèŒƒå›´ 0 ~ 2Ï€)
+ * @param  amplitude: è°ƒåˆ¶å¹…åº¦ (ç”±å¤–éƒ¨ PI æŽ§åˆ¶å™¨æä¾›ï¼ŒèŒƒå›´ 0.0 ~ 1.0)
  */
 void SPWM_Update(SPWM_t *spwm, float theta, float amplitude) {
-    // 1. Èí¼þÏÞ·ù£¬·ÀÖ¹Õ¼¿Õ±È³¬µ÷±¬Õ¨£¨¸øËÀÇøÁôÒ»µãµã¼«ÏÞÓàÁ¿£©
+    // 1. è½¯ä»¶é™å¹…ï¼Œé˜²æ­¢å ç©ºæ¯”è¶…è°ƒçˆ†ç‚¸ï¼ˆç»™æ­»åŒºç•™ä¸€ç‚¹ç‚¹æžé™ä½™é‡ï¼‰
     if (amplitude > 0.98f) amplitude = 0.98f; 
     if (amplitude < 0.0f)  amplitude = 0.0f;
     
-    // 2. ²é±íËã³öµ±Ç°ÏàÎ»µÄ±ê×¼ÕýÏÒÖµ (-1.0 µ½ 1.0)
+    // 2. æŸ¥è¡¨ç®—å‡ºå½“å‰ç›¸ä½çš„æ ‡å‡†æ­£å¼¦å€¼ (-1.0 åˆ° 1.0)
     float sin_value = arm_sin_f32(theta);
     
-    // 3. ºËÐÄ¼ÆËã£ºÒýÈë·ù¶È£¬²¢¼ÆËã×óÇÅ±ÛÕ¼¿Õ±È (0.0 ~ 1.0)
+    // 3. æ ¸å¿ƒè®¡ç®—ï¼šå¼•å…¥å¹…åº¦ï¼Œå¹¶è®¡ç®—å·¦æ¡¥è‡‚å ç©ºæ¯” (0.0 ~ 1.0)
     float duty_cycle_left = ((sin_value * amplitude) + 1.0f) / 2.0f;
     
-    // 4. µ¹ÏàÂß¼­£ºÓÒÇÅ±ÛµÄÕ¼¿Õ±ÈÖ±½ÓÓÃ 1 ¼õÈ¥×ó±ß¼´¿É
-    float duty_cycle_right = 1.0f - duty_cycle_left;
+    // 4. å€’ç›¸é€»è¾‘ï¼šå³æ¡¥è‡‚çš„å ç©ºæ¯”ç›´æŽ¥ç”¨ 1 å‡åŽ»å·¦è¾¹å³å¯
+    float duty_cycle_right =duty_cycle_left;
     
-    // 5. ½«Ð¡ÊýÕ¼¿Õ±ÈÓ³ÉäÎª¶¨Ê±Æ÷¼Ä´æÆ÷µÄÕæÊµÊýÖµ
+    // 5. å°†å°æ•°å ç©ºæ¯”æ˜ å°„ä¸ºå®šæ—¶å™¨å¯„å­˜å™¨çš„çœŸå®žæ•°å€¼
     spwm->CCR1_Value = (uint32_t)(duty_cycle_left * spwm->Period);
     spwm->CCR2_Value = (uint32_t)(duty_cycle_right * spwm->Period);
     
-    // 6. ×îºóÒ»µÀÓ²¼þ±£»¤·ÀÏß (·ÀÖ¹Ëã³ö¼«ÆäÎ£ÏÕµÄÂúÕ¼¿Õ±È)
-    // ÁôÏÂ 1 µÄÓàÁ¿£¬ÅäºÏÓ²¼þËÀÇø£¬¾ø¶Ô·ÀÖ¹ÉÏÏÂ¹ÜÖ±Í¨
+    // 6. æœ€åŽä¸€é“ç¡¬ä»¶ä¿æŠ¤é˜²çº¿ (é˜²æ­¢ç®—å‡ºæžå…¶å±é™©çš„æ»¡å ç©ºæ¯”)
+    // ç•™ä¸‹ 1 çš„ä½™é‡ï¼Œé…åˆç¡¬ä»¶æ­»åŒºï¼Œç»å¯¹é˜²æ­¢ä¸Šä¸‹ç®¡ç›´é€š
     if (spwm->CCR1_Value >= (uint32_t)spwm->Period) spwm->CCR1_Value = (uint32_t)spwm->Period - 1;
     if (spwm->CCR2_Value >= (uint32_t)spwm->Period) spwm->CCR2_Value = (uint32_t)spwm->Period - 1;
+}
+
+
+/**
+ * @brief  çž¬æ—¶ç”µåŽ‹é—­çŽ¯ / PR æŽ§åˆ¶
+ * é€‚åˆï¼šçž¬æ—¶ç”µåŽ‹é—­çŽ¯ / PR æŽ§åˆ¶
+ * æŽ§åˆ¶å™¨è¾“å‡ºçš„æ˜¯â€œæ­¤åˆ»çž¬æ—¶è°ƒåˆ¶é‡â€
+ * @param  spwm:   ç»“æž„ä½“æŒ‡é’ˆ
+ * @param  control: æŽ§åˆ¶é‡ (èŒƒå›´ -0.98 åˆ° 0.98)
+ */
+void SPWM_Update_ByControl(SPWM_t *spwm, float control)
+{
+    if (control > 0.98f) control = 0.98f;
+    if (control < -0.98f) control = -0.98f;
+
+    float duty = (control + 1.0f) / 2.0f;
+
+    spwm->CCR1_Value = (uint32_t)(duty * spwm->Period);
+    spwm->CCR2_Value = spwm->CCR1_Value;
+
+    if (spwm->CCR1_Value >= (uint32_t)spwm->Period) {
+        spwm->CCR1_Value = (uint32_t)spwm->Period - 1;
+    }
+
+    if (spwm->CCR2_Value >= (uint32_t)spwm->Period) {
+        spwm->CCR2_Value = (uint32_t)spwm->Period - 1;
+    }
+}
+
+void SPWM_ThreePhase_Update(SPWM_t *spwm, float theta, float amplitude)
+{
+    float phase_a;
+    float phase_b;
+    float phase_c;
+    float duty_a;
+    float duty_b;
+    float duty_c;
+    const float phase_shift = 2.094395102f;  // 2*pi/3
+
+    if (amplitude > 0.95f) amplitude = 0.95f;
+    if (amplitude < 0.0f)  amplitude = 0.0f;
+
+    phase_a = arm_sin_f32(theta);
+    phase_b = arm_sin_f32(theta - phase_shift);
+    phase_c = arm_sin_f32(theta + phase_shift);
+
+    duty_a = 0.5f + 0.5f * amplitude * phase_a;
+    duty_b = 0.5f + 0.5f * amplitude * phase_b;
+    duty_c = 0.5f + 0.5f * amplitude * phase_c;
+
+    spwm->CCR1_Value = (uint32_t)(duty_a * spwm->Period);
+    spwm->CCR2_Value = (uint32_t)(duty_b * spwm->Period);
+    spwm->CCR3_Value = (uint32_t)(duty_c * spwm->Period);
+}
+
+static float SVPWM_Clamp(float value, float min, float max)
+{
+    if (value > max) return max;
+    if (value < min) return min;
+    return value;
+}
+
+static uint32_t SVPWM_DutyToCCR(float duty, float period)
+{
+    duty = SVPWM_Clamp(duty, 0.0f, 1.0f);
+
+    if (duty >= 1.0f) {
+        return (uint32_t)period - 1U;
+    }
+
+    return (uint32_t)(duty * period);
+}
+
+void SVPWM_Update(SPWM_t *spwm,
+                  float v_alpha, float v_beta, float v_dc)
+{
+    float va, vb, vc;
+    float vmax, vmin;
+    float v_offset;
+    float half_span;
+    float scale;
+    float duty_a, duty_b, duty_c;
+    const float SQRT3_OVER_2 = 0.8660254f;
+
+    if (v_dc <= 1.0f) {
+        spwm->CCR1_Value = (uint32_t)(spwm->Period / 2.0f);
+        spwm->CCR2_Value = (uint32_t)(spwm->Period / 2.0f);
+        spwm->CCR3_Value = (uint32_t)(spwm->Period / 2.0f);
+        return;
+    }
+
+    /* Inverse Clarke: alpha/beta voltage command -> three phase command. */
+    va = v_alpha;
+    vb = -0.5f * v_alpha + SQRT3_OVER_2 * v_beta;
+    vc = -0.5f * v_alpha - SQRT3_OVER_2 * v_beta;
+
+    vmax = va;
+    if (vb > vmax) vmax = vb;
+    if (vc > vmax) vmax = vc;
+
+    vmin = va;
+    if (vb < vmin) vmin = vb;
+    if (vc < vmin) vmin = vc;
+
+    /* Keep the requested voltage vector inside the SVPWM linear region. */
+    half_span = 0.5f * (vmax - vmin);
+    if (half_span > 0.5f * v_dc) {
+        scale = (0.5f * v_dc) / half_span;
+        va *= scale;
+        vb *= scale;
+        vc *= scale;
+
+        vmax *= scale;
+        vmin *= scale;
+    }
+
+    /* This common-mode voltage is the SVPWM zero-vector distribution. */
+    v_offset = -0.5f * (vmax + vmin);
+
+    duty_a = 0.5f + (va + v_offset) / v_dc;
+    duty_b = 0.5f + (vb + v_offset) / v_dc;
+    duty_c = 0.5f + (vc + v_offset) / v_dc;
+
+    spwm->CCR1_Value = SVPWM_DutyToCCR(duty_a, spwm->Period);
+    spwm->CCR2_Value = SVPWM_DutyToCCR(duty_b, spwm->Period);
+    spwm->CCR3_Value = SVPWM_DutyToCCR(duty_c, spwm->Period);
 }

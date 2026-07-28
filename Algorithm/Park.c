@@ -1,8 +1,8 @@
 #include "park.h"
 
 /**
- * @brief  ³õÊ¼»¯ Park ½á¹¹Ìå
- * @param  park: ½á¹¹ÌåÖ¸Õë
+ * @brief  åˆå§‹åŒ– Park ç»“æ„ä½“
+ * @param  park: ç»“æ„ä½“æŒ‡é’ˆ
  */
 void Park_Init(Park_t *park) {
     park->Alpha = 0.0f;
@@ -13,40 +13,40 @@ void Park_Init(Park_t *park) {
 }
 
 /**
- * @brief  Ö´ĞĞ Park ±ä»» (·ÅÔÚ¶¨Ê±Æ÷ÖĞ¶ÏÀï£¬SOGI ËãÍêÖ®ºóµ÷ÓÃ)
- * @param  park:  ½á¹¹ÌåÖ¸Õë
- * @param  alpha: ÊäÈëµÄ Alpha ÖáµçÑ¹/µçÁ÷
- * @param  beta:  ÊäÈëµÄ Beta ÖáµçÑ¹/µçÁ÷
- * @param  theta: µ±Ç°µçÍøµÄÏàÎ»½Ç¶È (ÓÉ PLL Ìá¹©)
+ * @brief  æ‰§è¡Œ Park å˜æ¢ (æ”¾åœ¨å®šæ—¶å™¨ä¸­æ–­é‡Œï¼ŒSOGI ç®—å®Œä¹‹åè°ƒç”¨)
+ * @param  park:  ç»“æ„ä½“æŒ‡é’ˆ
+ * @param  alpha: è¾“å…¥çš„ Alpha è½´ç”µå‹/ç”µæµ
+ * @param  beta:  è¾“å…¥çš„ Beta è½´ç”µå‹/ç”µæµ
+ * @param  theta: å½“å‰ç”µç½‘çš„ç›¸ä½è§’åº¦ (ç”± PLL æä¾›)
  */
 void Park_Update(Park_t *park, float alpha, float beta, float theta) {
     float sin_val, cos_val;
     
-    // 1. ¸üĞÂ½á¹¹ÌåÄÚ²¿µÄÊäÈë×´Ì¬
+    // 1. æ›´æ–°ç»“æ„ä½“å†…éƒ¨çš„è¾“å…¥çŠ¶æ€
     park->Alpha = alpha;
     park->Beta  = beta;
     park->Theta = theta;
     
-    // 2. µ÷ÓÃ DSP ¿â¼«ËÙËã³öµ±Ç° Theta µÄÕıÏÒºÍÓàÏÒ
-    // ÕâÒ»²½±ÈÓÃ math.h µÄ sin() ºÍ cos() ¿ì¼¸Ê®±¶
+    // 2. è°ƒç”¨ DSP åº“æé€Ÿç®—å‡ºå½“å‰ Theta çš„æ­£å¼¦å’Œä½™å¼¦
+    // è¿™ä¸€æ­¥æ¯”ç”¨ math.h çš„ sin() å’Œ cos() å¿«å‡ åå€
     arm_sin_cos_f32(park->Theta, &sin_val, &cos_val);
     
-    // 3. ºËĞÄÊıÑ§¼ÆËã¹«Ê½
-    // ¼ÆËã D Öá·ÖÁ¿
+    // 3. æ ¸å¿ƒæ•°å­¦è®¡ç®—å…¬å¼
+    // è®¡ç®— D è½´åˆ†é‡
     park->D = (park->Alpha * cos_val) + (park->Beta * sin_val);
     
-    // ¼ÆËã Q Öá·ÖÁ¿ (Èç¹ûÊÇ×öµ¥Ïà PLL ËøÏà£¬Õâ¸ö Q ¾ÍÊÇÎÒÃÇÒªÏûÃğµÄÎó²î)
+    // è®¡ç®— Q è½´åˆ†é‡ (å¦‚æœæ˜¯åšå•ç›¸ PLL é”ç›¸ï¼Œè¿™ä¸ª Q å°±æ˜¯æˆ‘ä»¬è¦æ¶ˆç­çš„è¯¯å·®)
     park->Q = -(park->Alpha * sin_val) + (park->Beta * cos_val);
 }
 
 /**
-×¢²áÊ¾Àı:
+æ³¨å†Œç¤ºä¾‹:
 Park_t my_park;
 Park_Init(&my_park);
-µ÷ÓÃÊ¾Àı£º
-ÔÚ¶¨Ê±Æ÷ÖĞ¶ÏÀï£¬ÎÒÃÇ½«SOGIËã³öÀ´µÄV_alpha,V_beta,ÒÔ¼°ÎÒÃÇÔ¤²âµÄÏÖÔÚµÄ¦ÈÒ»²¢´«Èë£¬
+è°ƒç”¨ç¤ºä¾‹ï¼š
+åœ¨å®šæ—¶å™¨ä¸­æ–­é‡Œï¼Œæˆ‘ä»¬å°†SOGIç®—å‡ºæ¥çš„V_alpha,V_beta,ä»¥åŠæˆ‘ä»¬é¢„æµ‹çš„ç°åœ¨çš„Î¸ä¸€å¹¶ä¼ å…¥ï¼Œ
 Park_Update(&my_park, V_alpha, V_beta, current_theta);
-Ëã³öÎó²îQ
+ç®—å‡ºè¯¯å·®Q
 float speed_compensate = PI_Update(&my_pi, 0.0f, my_park.Q);
-speed_compensate:½ÇËÙ¶È²¹³¥Á¿
+speed_compensate:è§’é€Ÿåº¦è¡¥å¿é‡
  */

@@ -1,25 +1,27 @@
 #ifndef __PID_H
 #define __PID_H
 
-/* PI ¿ØÖÆÆ÷½á¹¹Ìå¶¨Òå */
+/* PI æ§åˆ¶å™¨ç»“æ„ä½“å®šä¹‰ */
 typedef struct {
-    // 1. ºËĞÄµ÷½Ú²ÎÊı (ĞèÒªÄã¸ù¾İÊµ¼ÊÓ²¼şÈ¥³¢ÊÔºÍĞŞ¸ÄµÄÖµ)
-    float Kp;           // ±ÈÀıÏµÊı£º·´Ó¦ËÙ¶È
-    float Ki;           // »ı·ÖÏµÊı£ºÏû³ı¾²²î
+    // 1. æ ¸å¿ƒè°ƒèŠ‚å‚æ•° (éœ€è¦ä½ æ ¹æ®å®é™…ç¡¬ä»¶å»å°è¯•å’Œä¿®æ”¹çš„å€¼)
+    float Kp;           // æ¯”ä¾‹ç³»æ•°ï¼šååº”é€Ÿåº¦
+    float Ki;           // ç§¯åˆ†ç³»æ•°ï¼šæ¶ˆé™¤é™å·®
     
-    // 2. ÀúÊ·×´Ì¬ (Ëã·¨ÄÚ²¿×Ô¼ºÎ¬»¤£¬Íâ²¿²»ĞèÒª¹Ü)
-    float Integral;     // ÀúÊ·Îó²îµÄÀÛ¼ÓºÍ
+    // 2. å†å²çŠ¶æ€ (ç®—æ³•å†…éƒ¨è‡ªå·±ç»´æŠ¤ï¼Œå¤–éƒ¨ä¸éœ€è¦ç®¡)
+    float Integral;     // å†å²è¯¯å·®çš„ç´¯åŠ å’Œ
     
-    // 3. ±£»¤²ÎÊı (·ÀÖ¹Õ¼¿Õ±È»ò¼ÆËã½á¹û±¬Õ¨)
-    float Out_Max;      // Êä³öÉÏÏŞ
-    float Out_Min;      // Êä³öÏÂÏŞ
+    // 3. ä¿æŠ¤å‚æ•° (é˜²æ­¢å ç©ºæ¯”æˆ–è®¡ç®—ç»“æœçˆ†ç‚¸)
+    float Out_Max;      // è¾“å‡ºä¸Šé™
+    float Out_Min;      // è¾“å‡ºä¸‹é™
     
-    // 4. ×îÖÕÊä³ö½á¹û
-    float Output;       // ¼ÆËãµÃ³öµÄ¿ØÖÆÁ¿
+    // 4. æœ€ç»ˆè¾“å‡ºç»“æœ
+    float Output;       // è®¡ç®—å¾—å‡ºçš„æ§åˆ¶é‡
+    float SampleTime;   // PI å®é™…è°ƒç”¨å‘¨æœŸï¼Œå•ä½ s
 } PI_Controller_t;
 
-/* º¯ÊıÉùÃ÷ */
-void PI_Init(PI_Controller_t *pi, float kp, float ki, float max, float min);
+/* å‡½æ•°å£°æ˜ */
+void PI_Init(PI_Controller_t *pi, float kp, float ki,
+             float sample_time, float max, float min);
 float PI_Update(PI_Controller_t *pi, float target, float actual);
 
 #endif

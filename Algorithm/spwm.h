@@ -3,15 +3,19 @@
 
 #include "stdint.h"
 
-/* SPWM ½á¹¹Ìå¶¨Òå */
+/* SPWM ç»“æ„ä½“å®šä¹‰ */
 typedef struct {
-    float    Period;      // ¶¨Ê±Æ÷µÄÖÜÆÚÖµ (ÀıÈç ARR ÅäÖÃÎª 8400£¬ÕâÀïÌî 8400.0f)
-    uint32_t CCR1_Value;  // Ëã³öÀ´µÄ×óÇÅ±Û±È½ÏÖµ (×¼±¸ÍÆ¸ø TIM1->CCR1)
-    uint32_t CCR2_Value;  // Ëã³öÀ´µÄÓÒÇÅ±Û±È½ÏÖµ (×¼±¸ÍÆ¸ø TIM1->CCR2)
+    float    Period;      // å®šæ—¶å™¨çš„å‘¨æœŸå€¼ (ä¾‹å¦‚ ARR é…ç½®ä¸º 8400ï¼Œè¿™é‡Œå¡« 8400.0f)
+    uint32_t CCR1_Value;  // ç®—å‡ºæ¥çš„å·¦æ¡¥è‡‚æ¯”è¾ƒå€¼ (å‡†å¤‡æ¨ç»™ TIM1->CCR1)
+    uint32_t CCR2_Value;  // ç®—å‡ºæ¥çš„å³æ¡¥è‡‚æ¯”è¾ƒå€¼ (å‡†å¤‡æ¨ç»™ TIM1->CCR2)
+    uint32_t CCR3_Value;  // ç®—å‡ºæ¥çš„å³æ¡¥è‡‚æ¯”è¾ƒå€¼ (å‡†å¤‡æ¨ç»™ TIM1->CCR3)
 } SPWM_t;
 
-/* ½Ó¿Úº¯ÊıÉùÃ÷ */
+/* æ¥å£å‡½æ•°å£°æ˜ */
 void SPWM_Init(SPWM_t *spwm, float arr_period);
 void SPWM_Update(SPWM_t *spwm, float theta, float amplitude);
-
+void SPWM_Update_ByControl(SPWM_t *spwm, float control);
+void SPWM_ThreePhase_Update(SPWM_t *spwm, float theta, float amplitude);
+void SVPWM_Update(SPWM_t *spwm,
+                  float v_alpha, float v_beta, float v_dc);
 #endif

@@ -1,18 +1,20 @@
 #ifndef __DUAL_LOOP_H
 #define __DUAL_LOOP_H
 
-#include "pid.h" // Îñ±Ø°üº¬ÄãÖ®Ç°Ğ´µÄ PI »ùÀà
+#include "pid.h" // åŠ¡å¿…åŒ…å«ä½ ä¹‹å‰å†™çš„ PI åŸºç±»
+#include "Pr.h"
 
-/* * ¶¨ÒåË«»·¿ØÖÆÆ÷³¬¼¶½á¹¹Ìå
- * ÎïÀíÒâÒå£º½«µçÑ¹Íâ»·ºÍµçÁ÷ÄÚ»·´ò°ü³ÉÒ»¸öÍêÕûµÄÏµÍ³
+/* * å®šä¹‰åŒç¯æ§åˆ¶å™¨è¶…çº§ç»“æ„ä½“
+ * ç‰©ç†æ„ä¹‰ï¼šå°†ç”µå‹å¤–ç¯å’Œç”µæµå†…ç¯æ‰“åŒ…æˆä¸€ä¸ªå®Œæ•´çš„ç³»ç»Ÿ
  */
 typedef struct {
-    PI_Controller_t Voltage_PI;  // Íâ»·£ºÀÏ°å£¨¸ù¾İµçÑ¹Îó²î£¬ÏÂ´ïµçÁ÷ KPI£©
-    PI_Controller_t Current_PI;  // ÄÚ»·£ºÖ÷¹Ü£¨¸ù¾İµçÁ÷Îó²î£¬¼«ËÙµ÷½Ú PWM µ÷ÖÆ±È£©
+    PI_Controller_t Voltage_PI;  // å¤–ç¯PIï¼šè€æ¿ï¼ˆæ ¹æ®ç”µå‹è¯¯å·®ï¼Œä¸‹è¾¾ç”µæµ KPIï¼‰
+    PI_Controller_t Current_PI;  // å†…ç¯PIï¼šä¸»ç®¡ï¼ˆæ ¹æ®ç”µæµè¯¯å·®ï¼Œæé€Ÿè°ƒèŠ‚ PWM è°ƒåˆ¶æ¯”ï¼‰
+    PR_Controller_t Current_PR;  // å†…ç¯PRï¼šä¸»ç®¡ï¼ˆæ ¹æ®ç”µæµè¯¯å·®ï¼Œæé€Ÿè°ƒèŠ‚ PWM è°ƒåˆ¶æ¯”ï¼‰
 } DualLoop_t;
 
-// º¯ÊıÉùÃ÷
-void DualLoop_Init(DualLoop_t *dual_loop);
+// å‡½æ•°å£°æ˜
+void DualLoop_Init(DualLoop_t *dual_loop, float sample_time);
 float DualLoop_Update(DualLoop_t *dual_loop, float target_voltage, float actual_voltage, float actual_current);
 
 #endif
