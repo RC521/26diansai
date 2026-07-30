@@ -664,6 +664,26 @@
               <FileType>5</FileType>
               <FilePath>..\APP\app_ThreePhase.h</FilePath>
             </File>
+            <File>
+              <FileName>app_pfc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APP\app_pfc.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_pfc.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\APP\app_pfc.h</FilePath>
+            </File>
+            <File>
+              <FileName>app_signal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\APP\app_signal.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_signal.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\APP\app_signal.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

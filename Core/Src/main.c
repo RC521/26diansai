@@ -29,7 +29,10 @@
 #include "app_pll.h"
 #include "app_config.h"
 #include "app_ThreePhase.h"
+#include "app_pfc.h"
+#include "app_signal.h"
 #include "arm_math.h"
+#include "stm32f4xx_ll_adc.h"
 #include <stdio.h>
 #include <string.h>
 #include "OLED.h"
@@ -45,16 +48,17 @@
 // 以前：volatile uint16_t adc_buffer[1];
 // 现在：必须能装下 3 个通道的数据！
 /* ADC1: Ia, Va. ADC2: Ib, Vb. ADC3: Vdc. */
-volatile uint16_t adc1_buffer[2];
+volatile uint16_t adc1_buffer[3];
 volatile uint16_t adc2_buffer[2];
-volatile uint16_t adc3_buffer[1];
+volatile uint16_t adc3_buffer[2];
 float DC_BUS_SENSOR_SCALE = 1.0f;
 float VOLTAGE_A_SCALE = 40.0f;
 float VOLTAGE_B_SCALE = 40.0f;
 
 #define ADC_REFERENCE_VOLTAGE 3.3f
 #define ADC_FULL_SCALE         4095.0f
-#define CURRENT_A_ADC_OFFSET   2047.5f
+#define ADC_VREFINT_INDEX      2U
+#define CURRENT_A_ADC_OFFSET   2020.7f
 #define CURRENT_B_ADC_OFFSET   2047.5f
 #define VOLTAGE_A_ADC_OFFSET   2048.0f
 #define VOLTAGE_B_ADC_OFFSET   2048.0f
@@ -75,13 +79,27 @@ float CURRENT_C_SCALE = 5;// 硬件互感器的倍数,还原成真实的电流
 
 
 float ia_real, va_real, ib_real, vb_real, ic_real, vc_real = 0.0f;
+
+/* PFC sensor raw values for OLED display */
+volatile float pfc_ui_real  = 0.0f;
+volatile float pfc_ii_real  = 0.0f;
+volatile float pfc_vdc_real = 0.0f;
+
+/* PFC input sensors: tune these independently from inverter-side sensors. */
+float PFC_UI_ADC_OFFSET = 2047.5f;
+float PFC_II_ADC_OFFSET = 2021.67f;
+float PFC_UI_SENSOR_SCALE = 34.50f;
+float PFC_II_SENSOR_SCALE = 4.6f;
+volatile float adc_vdda = ADC_REFERENCE_VOLTAGE;
+float PFC_VDC_SENSOR_SCALE = 27.0f;   //母线电压检测
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 static float theta_3ph = 0.0f;
 
-#define THREE_PHASE_FREQ_HZ  50.0f
+#define THREE_PHASE_FREQ_HZ  60.0f
 #define DQ_THETA_OFFSET      (-0.5f * PI_VALUE)
 #define THREE_PHASE_STEP \
     (2.0f * PI_VALUE * THREE_PHASE_FREQ_HZ * CONTROL_SAMPLE_TIME)
@@ -95,7 +113,22 @@ SPWM_t my_spwm;
 DualLoop_t My_DualLoop;
 RMS_t Vout_RMS;
 APP_ThreePhase_t ThreePhase_Control;
+APP_PFC_t Pfc_Control;
 static volatile uint8_t adc_ready_mask;
+static volatile uint8_t pfc_adc_ready_mask;
+static APP_OffsetCal_t Pfc_Ui_OffsetCal;
+static APP_OffsetCal_t Pfc_Ii_OffsetCal;
+static APP_LowPass_t Pfc_Ui_Filter;
+static APP_LowPass_t Pfc_Ii_Filter;
+static APP_LowPass_t Pfc_Vdc_Filter;
+static uint8_t  pfc_adc_calibration_done;
+static uint32_t pfc_startup_settle_count;  /* 上电后跳过前 N 次采样，等模拟前端稳定 */
+#if PFC_SIMULATION_ENABLE == 1
+static volatile float pfc_sim_ui;
+static volatile float pfc_sim_ii;
+static volatile float pfc_sim_error;
+static volatile uint8_t pfc_sim_print_ready;
+#endif
 
 /* USER CODE END PV */
 
@@ -117,6 +150,23 @@ int fputc(int ch, FILE *f)
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void ADC_UpdateVdda(void)
+{
+  uint32_t vrefint_raw = adc1_buffer[ADC_VREFINT_INDEX];
+
+  if (vrefint_raw != 0U)
+  {
+    float new_vdda = (float)__LL_ADC_CALC_VREFANALOG_VOLTAGE(
+                         vrefint_raw,
+                         LL_ADC_RESOLUTION_12B) / 1000.0f;
+
+    if ((new_vdda > 2.7f) && (new_vdda < 3.6f))
+    {
+      adc_vdda = adc_vdda * 0.95f + new_vdda * 0.05f;
+    }
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -158,6 +208,8 @@ int main(void)
   MX_TIM9_Init();
   MX_ADC2_Init();
   MX_ADC3_Init();
+  MX_TIM4_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
 	//10kHz
 	APP_PLL_Init(&System_PLL, CONTROL_SAMPLE_TIME);
@@ -165,6 +217,18 @@ int main(void)
 	DualLoop_Init(&My_DualLoop, CONTROL_SAMPLE_TIME);
   RMS_Init(&Vout_RMS);
   APP_ThreePhase_Init(&ThreePhase_Control, &my_spwm);
+  APP_PFC_Init(&Pfc_Control);
+  APP_PFC_SetPwmEnable(&Pfc_Control, 0U);
+  APP_OffsetCal_Init(&Pfc_Ui_OffsetCal,
+                     PFC_OFFSET_CAL_SAMPLES, PFC_UI_ADC_OFFSET);
+  APP_OffsetCal_Init(&Pfc_Ii_OffsetCal,
+                     PFC_OFFSET_CAL_SAMPLES, PFC_II_ADC_OFFSET);
+  APP_LowPass_Init(&Pfc_Ui_Filter,
+                   CONTROL_SAMPLE_TIME, PFC_UI_LPF_CUTOFF_HZ);
+  APP_LowPass_Init(&Pfc_Ii_Filter,
+                   CONTROL_SAMPLE_TIME, PFC_II_LPF_CUTOFF_HZ);
+  APP_LowPass_Init(&Pfc_Vdc_Filter,
+                   CONTROL_SAMPLE_TIME, PFC_VDC_LPF_CUTOFF_HZ);
   PR_Init(&My_DualLoop.Current_PR,
           0.1f, 10.0f,
           50.0f, 5.0f, CONTROL_SAMPLE_TIME,
@@ -178,18 +242,30 @@ int main(void)
   TIM3->CCR4 = 50;
   TIM9->CCR1 = 50;
   TIM9->CCR2 = 50;
+  TIM4->CCR1 = 50 + PFC_SOFTWARE_DEADTIME_COUNTS;
+  TIM4->CCR2 = 50;
+  TIM5->CCR2 = 50 + PFC_SOFTWARE_DEADTIME_COUNTS;
+  TIM5->CCR3 = 50;
 
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc1_buffer, 2);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc1_buffer, 3);
 	HAL_ADC_Start_DMA(&hadc2, (uint32_t *)adc2_buffer, 2);
-	HAL_ADC_Start_DMA(&hadc3, (uint32_t *)adc3_buffer, 1);
+	HAL_ADC_Start_DMA(&hadc3, (uint32_t *)adc3_buffer, 2);
   HAL_TIM_Base_Start(&htim3);
   HAL_TIM_Base_Start(&htim9);
+  HAL_TIM_Base_Start(&htim5);
+  HAL_TIM_Base_Start(&htim4);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
   HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim9, TIM_CHANNEL_2);
+#if PFC_PWM_TEST_ENABLE == 1
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim5, TIM_CHANNEL_3);
+#endif
 
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim6);
@@ -202,9 +278,83 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    OLED_Printf(0, 0, OLED_8X16, "Ia:%.2fA", ia_real);
-    OLED_Printf(0, 16, OLED_8X16, "Va:%.2fA", va_real);
-    OLED_Update();
+    /* ---- OLED 刷新 (10Hz，避免 I2C 阻塞主循环) ---- 
+    {
+      static uint32_t oled_last_tick = 0;
+      uint32_t now = HAL_GetTick();
+
+      if (now - oled_last_tick >= 100U) {
+        oled_last_tick = now;
+
+        if (pfc_adc_calibration_done == 0U) {
+          OLED_Printf(0, 0, OLED_8X16, "PFC Calibrating...");
+          OLED_Printf(0, 16, OLED_8X16, "Ui offset:%4.0f",
+                      (double)Pfc_Ui_OffsetCal.Offset);
+          OLED_Printf(0, 32, OLED_8X16, "Ii offset:%4.0f",
+                      (double)Pfc_Ii_OffsetCal.Offset);
+        } else {
+          OLED_Printf(0, 0, OLED_8X16, "Ui:%.1fV", (double)pfc_ui_real);
+          OLED_Printf(0, 16, OLED_8X16, "Ii:%.2fA", (double)pfc_ii_real);
+          OLED_Printf(0, 32, OLED_8X16, "Vdc:%.1fV", (double)pfc_vdc_real);
+        }
+        OLED_Update();
+      }
+    }
+    */
+
+
+    /* ---- 串口打印: Ui, Iref, cos_theta, theta, Q, delta_omega, Freq (1ms) ----
+       列1 Ui          : 电网电压
+       列2 Iref        : 电流参考 (应为正弦波)
+       列3 cos_theta   : cos(PLL.theta) (应为正弦波, 幅值1)
+       列4 theta       : PLL.theta (应线性增长 0→2π 循环)
+       列5 park.Q      : Park变换Q轴分量 (锁相后应≈0)
+       列6 delta_omega : PI输出角速度补偿 (未饱和时应≈0)
+       列7 Freq        : PLL实时频率 (应≈50Hz)
+
+       诊断:
+       - 列4 theta 如果不增长 → PLL角度积分有问题
+       - 列3 cos_theta 如果是常数 → theta 没转或转速极慢
+       - 列5 Q 如果很大 → PLL没锁住
+       - 列6 如果饱和在±50 → PI参数/信号有问题 */
+    {
+#if PFC_SIMULATION_ENABLE == 1
+      if (pfc_sim_print_ready != 0U) {
+        pfc_sim_print_ready = 0U;
+        printf("%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\r\n",
+               (double)pfc_sim_ui,
+               (double)pfc_sim_ii,
+               (double)Pfc_Control.Debug_Iref,
+               (double)pfc_sim_error,
+               (double)Pfc_Control.Debug_Current_Control,
+               (double)Pfc_Control.Debug_Modulation);
+      }
+#else
+
+       printf("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
+              (double)pfc_ui_real,
+              (double)pfc_ii_real,
+							(double)pfc_vdc_real,
+              (double)Pfc_Control.Debug_Iref,
+              (double)Pfc_Control.Debug_Current_Control,
+              (double)Pfc_Control.Debug_Modulation
+             );
+			 
+//			        printf("%.4f,%.4f\r\n",
+//              (double)pfc_ui_real,
+//              (double)pfc_ii_real
+//             );
+        
+     
+			// printf("%.3f,%d,%d,%d\r\n",
+      //  (double)theta_3ph,
+      //  my_spwm.CCR1_Value,
+      //  my_spwm.CCR2_Value,
+      //  my_spwm.CCR3_Value);
+
+#endif
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -347,7 +497,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     float sin_theta;
     float cos_theta;
     float v_phase_peak_cmd;
-    const float vdc_real = 18.0f;
+    const float vdc_real = 60.0f;
 #endif
 
     if (htim->Instance != TIM6) {
@@ -362,13 +512,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 #if SPWM_USE == 1
 
-    SPWM_ThreePhase_Update(&my_spwm, theta_3ph, 0.20f);
+    SPWM_ThreePhase_Update(&my_spwm, theta_3ph, 0.87055f);
 
 #elif SVPWM_USE == 1
 
-    arm_sin_cos_f32(theta_3ph, &sin_theta, &cos_theta);
+    arm_sin_cos_f32(theta_3ph * 180.0f / PI_VALUE,
+                    &sin_theta,
+                    &cos_theta);
 
-    v_phase_peak_cmd = 0.20f * vdc_real;
+    v_phase_peak_cmd = 32.20f * 0.81649658f;
 
     SVPWM_Update(&my_spwm,
                  v_phase_peak_cmd * sin_theta,
@@ -439,6 +591,140 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         //APP_ThreePhase_TimerTick(&ThreePhase_Control);
     }
 }
+#endif
+
+#if PFC_USE == 1
+#if (PLL_USE == 1) || (BI_HUAN_SAN_XIANG == 1)
+#error "PFC_USE cannot share HAL_ADC_ConvCpltCallback with PLL or three-phase closed loop"
+#endif
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+#if PFC_SIMULATION_ENABLE == 0
+    if (hadc->Instance == ADC1) {
+        pfc_adc_ready_mask |= 0x01U;
+    } else if (hadc->Instance == ADC2) {
+        pfc_adc_ready_mask |= 0x02U;
+    } else {
+        return;
+    }
+
+    if (pfc_adc_ready_mask == 0x03U) {
+        float ui_real;
+        float ii_real;
+        float vdc_real;
+
+        pfc_adc_ready_mask = 0U;
+
+        ADC_UpdateVdda();
+
+        /* ---- 上电稳定延时：跳过前 5000 次采样 (~250ms) ----
+         * ADC 基准电压、运放偏置、传感器供电需要时间建立，
+         * 这段时间的采样值不可靠，不能用来做偏移校准。 */
+#if PFC_AUTO_OFFSET_CAL_ENABLE == 1
+        if (pfc_startup_settle_count < 5000U) {
+            pfc_startup_settle_count++;
+            return;
+        }
+
+        if (pfc_adc_calibration_done == 0U) {
+            uint8_t ui_ready;
+            uint8_t ii_ready;
+
+            ui_ready = APP_OffsetCal_Update(&Pfc_Ui_OffsetCal,
+                                             (float)adc1_buffer[0]);
+            ii_ready = APP_OffsetCal_Update(&Pfc_Ii_OffsetCal,
+                                             (float)adc1_buffer[1]);
+            if ((ui_ready != 0U) && (ii_ready != 0U)) {
+                PFC_UI_ADC_OFFSET = Pfc_Ui_OffsetCal.Offset;
+                PFC_II_ADC_OFFSET = Pfc_Ii_OffsetCal.Offset;
+                pfc_adc_calibration_done = 1U;
+
+                ui_real = ((float)adc1_buffer[0] - PFC_UI_ADC_OFFSET) *
+                          (adc_vdda / ADC_FULL_SCALE) *
+                          PFC_UI_SENSOR_SCALE;
+                ii_real = (PFC_II_ADC_OFFSET - (float)adc1_buffer[1]) *
+                          (adc_vdda / ADC_FULL_SCALE) *
+                          PFC_II_SENSOR_SCALE;
+                vdc_real = (float)adc2_buffer[0] *
+                           (adc_vdda / ADC_FULL_SCALE) *
+                           PFC_VDC_SENSOR_SCALE;
+                APP_PFC_CheckOverVoltage(&Pfc_Control, vdc_real);
+                APP_LowPass_Reset(&Pfc_Ui_Filter, ui_real);
+                APP_LowPass_Reset(&Pfc_Ii_Filter, ii_real);
+                APP_LowPass_Reset(&Pfc_Vdc_Filter, vdc_real);
+                APP_PFC_SetPwmEnable(&Pfc_Control, PFC_PWM_ENABLE);
+            }
+            return;
+        }
+
+#endif
+        ui_real = ((float)adc1_buffer[0] - PFC_UI_ADC_OFFSET) *
+                  (adc_vdda / ADC_FULL_SCALE) *
+                  PFC_UI_SENSOR_SCALE;
+        ii_real = (-PFC_II_ADC_OFFSET + (float)adc1_buffer[1]) *
+                  (adc_vdda / ADC_FULL_SCALE) *
+                  PFC_II_SENSOR_SCALE;
+        vdc_real = (float)adc2_buffer[0] *
+                   (adc_vdda / ADC_FULL_SCALE) *
+                   PFC_VDC_SENSOR_SCALE;
+        APP_PFC_CheckOverVoltage(&Pfc_Control, vdc_real);
+
+        /* 保存原始值供主循环 OLED 显示 */
+        pfc_ui_real  = ui_real;
+        pfc_ii_real  = ii_real;
+        pfc_vdc_real = vdc_real;
+
+        APP_PFC_Update(
+            &Pfc_Control,
+            APP_LowPass_Update(&Pfc_Ui_Filter, ui_real),
+            APP_LowPass_Update(&Pfc_Ii_Filter, ii_real),
+            APP_LowPass_Update(&Pfc_Vdc_Filter, vdc_real));
+    }
+#else
+    (void)hadc;
+#endif
+}
+#if PFC_SIMULATION_ENABLE == 1
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+    static float pfc_sim_theta;
+    static uint32_t pfc_sim_print_counter;
+    float ui_sim;
+    float ii_real;
+
+    if (htim->Instance != TIM6) {
+        return;
+    }
+
+    pfc_sim_theta += 2.0f * PI_VALUE * PFC_SIM_GRID_FREQ_HZ *
+                     CONTROL_SAMPLE_TIME;
+    if (pfc_sim_theta >= 2.0f * PI_VALUE) { 
+        pfc_sim_theta -= 2.0f * PI_VALUE;
+    }
+
+    ui_sim = PFC_SIM_UI_PEAK * arm_sin_f32(pfc_sim_theta);
+    ADC_UpdateVdda();
+    ii_real = (PFC_II_ADC_OFFSET - (float)adc1_buffer[1]) *
+              (adc_vdda / ADC_FULL_SCALE) * PFC_II_SENSOR_SCALE;
+
+    pfc_ui_real = ui_sim;
+    pfc_ii_real = ii_real;
+    pfc_vdc_real = PFC_SIM_VDC;
+
+    APP_PFC_Update(&Pfc_Control,
+                   ui_sim,
+                   APP_LowPass_Update(&Pfc_Ii_Filter, ii_real),
+                   PFC_SIM_VDC);
+
+    if (++pfc_sim_print_counter >= PFC_SIM_PRINT_DIVIDER) {
+        pfc_sim_print_counter = 0U;
+        pfc_sim_ui = ui_sim;
+        pfc_sim_ii = Pfc_Control.Debug_Ii;
+        pfc_sim_error = Pfc_Control.Debug_Iref - Pfc_Control.Debug_Ii;
+        pfc_sim_print_ready = 1U;
+    }
+}
+#endif
 #endif
 
 
